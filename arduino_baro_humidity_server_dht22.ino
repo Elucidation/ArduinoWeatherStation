@@ -28,9 +28,14 @@ IPAddress ip(192,168,62,177);
 // with the IP address and port you want to use 
 // (port 80 is default for HTTP):
 EthernetServer server(80);
-
 String message;
+#define MODE_NORMAL 0
+#define MODE_JSON 1
+#define MODE_RAW 2
+#define MODE_ERROR 3
+int chosen_mode = MODE_NORMAL;
 
+#define BUFFER 1024 // bytes
 
 //////////////////// SENSORS
 
@@ -62,14 +67,27 @@ float getLightLevel(int pin)
   return (float)(DARK_VAL-val)/(float)(DARK_VAL-BRIGHT_VAL);
 }
 
+/// SENSOR GLOBAL VARS
+float light_level;
+float bmp_temperature;
+float altitude;
+long pressure;
+float dht_humidity;
+float dht_temp;
+float in_temp;
+float out_temp;
+int dht_status;
 
+unsigned long curr_time; // milliseconds sine hardware start
+
+///////////////////////////////////////////////////////////////
 void setup()
 {
   Serial.begin(9600);
   Serial.println("Initializing...");
   
   // Reserve & initialize space for string
-  message.reserve(1024);
+  message.reserve(BUFFER);
   message = "";
     
   // Initialize LED off
@@ -93,9 +111,83 @@ void setup()
   Serial.println("Initialized.");
 }
 
-float light_level;
-float bmp_temperature, altitude;
-long pressure;
+///////////////////////////////////////////////////////////////
+void loop()
+{
+  int index = 0;
+
+  // printAllData();
+  serialPrintRaw();
+  
+  delay(1000);
+  serialPrintJSON();
+  delay(1000);
+
+  // listen for incoming clients
+  EthernetClient client = server.available();
+  if (client) {
+    Serial.println("new client");
+    // an http request ends with a blank line
+    boolean currentLineIsBlank = true;
+
+    while (client.connected()) {
+      if (client.available()) {
+        char c = client.read();
+
+        // Read into message string
+        if (c != '\n' && c != '\r') {
+          index++;
+
+          // Message on current line, ignore past buffer
+          if (index < BUFFER) message += c;
+
+          // Keep going through loop
+          continue;
+        }
+
+        Serial.println(message);
+
+        // If line is blank, reached end of message
+        if (message == "") {
+          printHeader(client);
+          switch (chosen_mode)
+          {
+            case MODE_JSON:
+            clientPrintJSON(client);
+            break;
+            case MODE_RAW:
+            clientPrintRaw(client);
+            break;
+            case MODE_NORMAL:
+            clientPrintAllData(client);
+            break;
+            case MODE_ERROR:
+            default:
+            clientPrintError(client);
+            break;
+          }
+          printCloser(client);
+          chosen_mode = 0; // reset mode after printing
+        }
+        else if (message.indexOf("GET /json") >= 0) { chosen_mode = MODE_JSON; } // Return JSON data format
+        else if (message.indexOf("GET /raw") >= 0) { chosen_mode = MODE_RAW; } // Return just the raw values
+        else { chosen_mode = MODE_ERROR;}
+
+        // Start next line
+        message = "";
+        index = 0;
+      }
+    }
+
+    // give the web browser time to receive the data
+    delay(1);
+    // close the connection:
+    client.stop();
+    Serial.println("client disconnected\n-----");
+  }
+}
+
+/////////////////////////////////////////////////////////////////////
 
 void printAllData()
 {
@@ -103,6 +195,7 @@ void printAllData()
   pressure = bmp.getPressure();
   altitude = bmp.getAltitude();
   light_level = getLightLevel(PHOTORESISTOR_PIN);
+  dht_status = DHT.read22(DHT22_PIN);
   
   Serial.print("BMP Temperature: ");
   Serial.print(bmp_temperature, 2);
@@ -113,8 +206,8 @@ void printAllData()
   Serial.print("Altitude: ");
   Serial.print(altitude, 2);
   Serial.println(" m");
-  
-  switch (DHT.read22(DHT22_PIN)) {
+
+  switch (dht_status) {
   case DHTLIB_OK:
       Serial.print("Humidity: ");
       Serial.print(DHT.humidity, 1);
@@ -149,15 +242,109 @@ void printAllData()
   Serial.println(" deg C");
   Serial.println();
 }
-void clientPrintAllData(EthernetClient client)
+
+// Read all sensors to global holders
+void readSensors()
 {
+  curr_time = millis(); // Start time
   bmp_temperature = bmp.getTemperature();
   pressure = bmp.getPressure();
   altitude = bmp.getAltitude();
   light_level = getLightLevel(PHOTORESISTOR_PIN);
+  in_temp = indoor_temp.getReading();
+  out_temp = outdoor_temp.getReading();
+  dht_status = DHT.read22(DHT22_PIN);
+
+  switch (dht_status) {
+  case DHTLIB_OK:
+      dht_humidity = DHT.humidity;
+      dht_temp = DHT.temperature;
+      break;
+
+  case DHTLIB_ERROR_CHECKSUM:
+      dht_humidity = -100;
+      dht_temp = -100;
+      break;
+
+  case DHTLIB_ERROR_TIMEOUT:
+      dht_humidity = -200;
+      dht_temp = -200;
+      break;
+
+  default:
+      dht_humidity = -300;
+      dht_temp = -300;
+      break;
+  }
+}
+
+void clientPrintError(EthernetClient &client)
+{
+  client.print("Unexpected request.");
+}
+// Print BMP_temp pressure altitude light_level DHT_humidty DHT_temperature in_temp out_temp
+void clientPrintRaw(EthernetClient &client)
+{
+  readSensors();
+  client.print(curr_time);
+  client.print(" ");
+  client.print(light_level, 2);
+  client.print(" ");
+  client.print(bmp_temperature, 2);
+  client.print(" ");
+  client.print(pressure, DEC);
+  client.print(" ");
+  client.print(altitude, 2);
+  client.print(" ");
+  client.print(dht_status);
+  client.print(" ");
+  client.print(dht_humidity, 1);
+  client.print(" ");
+  client.print(dht_temp, 1);
+  client.print(" ");
+  client.print(in_temp, 2);
+  client.print(" ");
+  client.println(out_temp, 2);
+}
+
+void clientPrintJSON(EthernetClient &client)
+{
+  readSensors();
   
+  client.print("{'curr_time':");
+  client.print(curr_time);
+  client.print(",'light_level':");
+  client.print(light_level, 2);
+  client.print(",'bmp_temperature':");
+  client.print(bmp_temperature, 2);
+  client.print(",'altitude':");
+  client.print(altitude, 2);
+  client.print(",'pressure':");
+  client.print(pressure, DEC);
+  client.print(",'dht_status':");
+  client.print(dht_status);
+  client.print(",'dht_humidity':");
+  client.print(dht_humidity, 2);
+  client.print(",'dht_temp':");
+  client.print(dht_temp, 2);
+  client.print(",'in_temp':");
+  client.print(in_temp, 2);
+  client.print(",'out_temp':");
+  client.print(out_temp, 2);
+  client.println("}");
+}
+
+void clientPrintAllData(EthernetClient &client)
+{
+  readSensors();
+  
+  client.print("Time: ");
+  client.println(curr_time);
   client.print("BMP Temp: ");
   client.print(bmp_temperature, 2);
+  client.println(" deg C<br/>");
+  client.print("Indoor Temp: ");
+  client.print(in_temp, 2);
   client.println(" deg C<br/>");
   client.print("Pressure: ");
   client.print(pressure, DEC);
@@ -166,14 +353,14 @@ void clientPrintAllData(EthernetClient client)
   client.print(altitude, 2);
   client.println(" m<br/>");
   
-  switch (DHT.read22(DHT22_PIN)) {
+  switch (dht_status) {
   case DHTLIB_OK:
       client.print("Humidity: ");
-      client.print(DHT.humidity, 1);
+      client.print(dht_humidity, 1);
       client.println(" %<br/>");
 
       client.print("DHT Temp: ");
-      client.print(DHT.temperature, 1);
+      client.print(dht_temp, 1);
       client.println(" deg C<br/>");
       break;
 
@@ -193,70 +380,74 @@ void clientPrintAllData(EthernetClient client)
   client.print("Light: ");
   client.print(light_level, 2);
   client.println("<br/>");
-  client.print("Indoor Temp: ");
-  client.print(indoor_temp.getReading(), 2);
-  client.println(" deg C<br/>");
   client.print("Outdoor Temp: ");
-  client.print(outdoor_temp.getReading(), 2);
+  client.print(out_temp, 2);
   client.println(" deg C<br/>");
 }
 
-void loop()
+void printHeader(EthernetClient &client)
 {
-  printAllData();
-  delay(1000);
-  // listen for incoming clients
-  EthernetClient client = server.available();
-  if (client) {
-    Serial.println("new client");
-    // an http request ends with a blank line
-    boolean currentLineIsBlank = true;
-    
-    // Checks if glass is connecting
-    boolean isGlass = false;
-    
-    while (client.connected()) {
-      if (client.available()) {
-        char c = client.read();
-        Serial.write(c);
-        // if you've gotten to the end of the line (received a newline
-        // character) and the line is blank, the http request has ended,
-        // so you can send a reply
-        if (c == '\n' && currentLineIsBlank) {
-          // send a standard http response header
-          client.println("HTTP/1.1 200 OK");
-          client.println("Content-Type: text/html");
-          client.println("Connection: close");  // the connection will be closed after completion of the response
-	  client.println("Refresh: 5");  // refresh the page automatically every 5 sec
-          client.println();         
-          client.println("<!DOCTYPE HTML>");
-          client.println("<html>");
-          // Print our data
-          clientPrintAllData(client);
-          client.println("</html>");
-          break;
-        }
-        if (c == '\n') {
-          // you're starting a new line
-          currentLineIsBlank = true;
-          // Clear message for next line
-          message = "";
-        } 
-        else if (c != '\r') {
-          // you've gotten a character on the current line
-          currentLineIsBlank = false;
-          
-          // Message on current line
-          message += c;
-        }
-      }
-    }
-    // give the web browser time to receive the data
-    delay(1);
-    // close the connection:
-    client.stop();
-    Serial.println("client disconnected\n-----");
-  }
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-Type: text/html");
+  client.println("Connection: close");  // the connection will be closed after completion of the response
+  client.println("Refresh: 5");  // refresh the page automatically every 5 sec
+  client.println();
+  client.println("<!DOCTYPE HTML>");
+  client.println("<html>");
 }
 
+void printCloser(EthernetClient &client)
+{
+  client.println("</html>");
+}
 
+void serialPrintRaw()
+{
+  readSensors();
+  Serial.print(curr_time);
+  Serial.print(" ");
+  Serial.print(light_level, 2);
+  Serial.print(" ");
+  Serial.print(bmp_temperature, 2);
+  Serial.print(" ");
+  Serial.print(pressure, DEC);
+  Serial.print(" ");
+  Serial.print(altitude, 2);
+  Serial.print(" ");
+  Serial.print(dht_status);
+  Serial.print(" ");
+  Serial.print(dht_humidity, 1);
+  Serial.print(" ");
+  Serial.print(dht_temp, 1);
+  Serial.print(" ");
+  Serial.print(in_temp, 2);
+  Serial.print(" ");
+  Serial.println(out_temp, 2);
+}
+
+void serialPrintJSON()
+{
+  readSensors();
+  
+  Serial.print("{'curr_time':");
+  Serial.print(curr_time);
+  Serial.print(",'light_level':");
+  Serial.print(light_level, 2);
+  Serial.print(",'bmp_temperature':");
+  Serial.print(bmp_temperature, 2);
+  Serial.print(",'altitude':");
+  Serial.print(altitude, 2);
+  Serial.print(",'pressure':");
+  Serial.print(pressure, DEC);
+  Serial.print(",'dht_status':");
+  Serial.print(dht_status);
+  Serial.print(",'dht_humidity':");
+  Serial.print(dht_humidity, 2);
+  Serial.print(",'dht_temp':");
+  Serial.print(dht_temp, 2);
+  Serial.print(",'in_temp':");
+  Serial.print(in_temp, 2);
+  Serial.print(",'out_temp':");
+  Serial.print(out_temp, 2);
+  Serial.println("}");
+}
