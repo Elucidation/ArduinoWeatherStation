@@ -13,6 +13,7 @@ Parts
 * [DHT22 Temperature-Humidity Sensor](https://www.adafruit.com/products/385)
 * [Photo Light Sensitive Resistor GL5516](http://www.amazon.com/gp/product/B008FUT7K6/)
 * [10K Ohm Temperature Measurement NTC Thermistors MF52-103](http://www.amazon.com/gp/product/B0087YI1KW)
+* [Arduino Ethernet Shield](http://arduino.cc/en/Main/ArduinoEthernetShield)
 * [Arduino Mega](http://arduino.cc/en/Main/arduinoBoardMega)
 
 __Parts were bought off of amazon.__
