@@ -366,60 +366,6 @@ void loop()
 
 /////////////////////////////////////////////////////////////////////
 
-void printAllData()
-{
-  bmp_temperature = bmp.getTemperature();
-  pressure = bmp.getPressure();
-  altitude = bmp.getAltitude();
-  light_level = getLightLevel(PHOTORESISTOR_PIN);
-  dht_status = DHT.read22(DHT22_PIN);
-  
-  Serial.print("BMP Temperature: ");
-  Serial.print(bmp_temperature, 2);
-  Serial.println(" deg C");
-  Serial.print("Pressure: ");
-  Serial.print(pressure, DEC);
-  Serial.println(" Pa");
-  Serial.print("Altitude: ");
-  Serial.print(altitude, 2);
-  Serial.println(" m");
-
-  switch (dht_status) {
-  case DHTLIB_OK:
-      Serial.print("Humidity: ");
-      Serial.print(DHT.humidity, 1);
-      Serial.println(" %");
-
-      Serial.print("DHT Temperature: ");
-      Serial.print(DHT.temperature, 1);
-      Serial.println(" deg C");
-      break;
-
-  case DHTLIB_ERROR_CHECKSUM:
-      Serial.println("DHT Checksum error");
-      break;
-
-  case  DHTLIB_ERROR_TIMEOUT:
-      Serial.println("DHT Timeout error");
-      break;
-
-  default:
-      Serial.println("DHT Unknown error");
-      break;
-  }
-  
-  Serial.print("Light: ");
-  Serial.println(light_level, 2);
-  
-  Serial.print("Outdoor: ");
-  Serial.print(outdoor_temp.getReading(), 2);
-  Serial.println(" deg C");
-  Serial.print("Indoor: ");
-  Serial.print(indoor_temp.getReading(), 2);
-  Serial.println(" deg C");
-  Serial.println();
-}
-
 // Read all sensors to global holders
 void readSensors()
 {
@@ -516,9 +462,6 @@ void logData()
     // print to the serial port too:
     Serial.print("W ");
     Serial.println(filename_buffer);
-    Serial.println("---");
-    serialPrintRaw();
-    Serial.println("---");
   }
   else
   {
@@ -620,55 +563,4 @@ void printHeader(EthernetClient &client)
 void printCloser(EthernetClient &client)
 {
   client.println("</html>");
-}
-
-void serialPrintRaw()
-{
-  readSensors();
-  Serial.print(curr_time);
-  Serial.print(" ");
-  Serial.print(light_level, 2);
-  Serial.print(" ");
-  Serial.print(bmp_temperature, 2);
-  Serial.print(" ");
-  Serial.print(pressure, DEC);
-  Serial.print(" ");
-  Serial.print(altitude, 2);
-  Serial.print(" ");
-  Serial.print(dht_status);
-  Serial.print(" ");
-  Serial.print(dht_humidity, 1);
-  Serial.print(" ");
-  Serial.print(dht_temp, 1);
-  Serial.print(" ");
-  Serial.print(in_temp, 2);
-  Serial.print(" ");
-  Serial.println(out_temp, 2);
-}
-
-void serialPrintJSON()
-{
-  readSensors();
-  
-  Serial.print("{'curr_time':");
-  Serial.print(curr_time);
-  Serial.print(",'light_level':");
-  Serial.print(light_level, 2);
-  Serial.print(",'bmp_temperature':");
-  Serial.print(bmp_temperature, 2);
-  Serial.print(",'altitude':");
-  Serial.print(altitude, 2);
-  Serial.print(",'pressure':");
-  Serial.print(pressure, DEC);
-  Serial.print(",'dht_status':");
-  Serial.print(dht_status);
-  Serial.print(",'dht_humidity':");
-  Serial.print(dht_humidity, 2);
-  Serial.print(",'dht_temp':");
-  Serial.print(dht_temp, 2);
-  Serial.print(",'in_temp':");
-  Serial.print(in_temp, 2);
-  Serial.print(",'out_temp':");
-  Serial.print(out_temp, 2);
-  Serial.println("}");
 }
