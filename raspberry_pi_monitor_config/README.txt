@@ -1,0 +1,1 @@
+Copy data.conf & templates/ into /etc/rpimonitor
