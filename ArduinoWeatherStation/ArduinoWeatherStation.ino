@@ -1,19 +1,17 @@
 /*
 Ethernet server that provides data using:
-BMP085 - Barometric Pressure, Temperature, Altitude
+BMP085 - Barometric Pressure, Temperature
 DHT22 - Humidity, Temperature
-Thermistors - Indoor Temperature, Outdoor Temperature
 Photoresistor - Light Level
 
 One LED pin to be controlled
 */
 
-#include <SPI.h>
+#include <SPI.h> // For ethernet
 #include <Ethernet.h>
 
 #include <Wire.h>
 #include <BMP085_Sensor.h>
-#include <ThermistorSensor.h>
 #include <dht.h>
 ///////////////////////////////////////////////////////////////
 /////////////// SERVER
@@ -42,7 +40,7 @@ int chosen_mode = MODE_NORMAL;
 // SENSORS
 /////////////////////////////////
 // LED Pin
-#define LED_PIN 7
+#define LED_PIN 13
 /////////////////////////////////
 // Barometric Sensor
 BMP085_Sensor bmp;
@@ -50,12 +48,6 @@ BMP085_Sensor bmp;
 // DHT22 Humidity Sensor
 dht DHT;
 #define DHT22_PIN 2
-/////////////////////////////////
-// THERMISTORS
-// Outdoor thermistor
-ThermistorSensor outdoor_temp(A1);
-// Indoor thermistor
-ThermistorSensor indoor_temp(A2);
 /////////////////////////////////
 // PHOTOSENSOR
 #define PHOTORESISTOR_PIN A0
@@ -72,12 +64,9 @@ float getLightLevel(int pin)
 /// SENSOR GLOBAL VARS
 float light_level;
 float bmp_temperature;
-float altitude;
 long pressure;
-float dht_humidity;
-float dht_temp;
-float in_temp;
-float out_temp;
+float dht_humidity = 0;
+float dht_temp = 0;
 int dht_status;
 
 unsigned long curr_time; // milliseconds since hardware start
@@ -104,10 +93,6 @@ void setup()
     
   // Initialize Barometric Pressure Sensor
   bmp.init();
-    
-  // Initialize Thermistors
-  outdoor_temp.init();
-  indoor_temp.init();
   
   // start the Ethernet connection and the server:
   Ethernet.begin(mac, ip);
@@ -218,10 +203,7 @@ void readSensors()
   curr_time = millis(); // Start time
   bmp_temperature = bmp.getTemperature();
   pressure = bmp.getPressure();
-  altitude = bmp.getAltitude();
   light_level = getLightLevel(PHOTORESISTOR_PIN);
-  in_temp = indoor_temp.getReading();
-  out_temp = outdoor_temp.getReading();
   dht_status = DHT.read22(DHT22_PIN);
 
   switch (dht_status) {
@@ -231,18 +213,18 @@ void readSensors()
       break;
 
   case DHTLIB_ERROR_CHECKSUM:
-      dht_humidity = -100;
-      dht_temp = -100;
+      // dht_humidity = -100;
+      // dht_temp = -100;
       break;
 
   case DHTLIB_ERROR_TIMEOUT:
-      dht_humidity = -200;
-      dht_temp = -200;
+      // dht_humidity = -200;
+      // dht_temp = -200;
       break;
 
   default:
-      dht_humidity = -300;
-      dht_temp = -300;
+      // dht_humidity = -300;
+      // dht_temp = -300;
       break;
   }
 }
@@ -264,17 +246,11 @@ void clientPrintRaw(EthernetClient &client)
   client.print(" ");
   client.print(pressure, DEC);
   client.print(" ");
-  client.print(altitude, 2);
-  client.print(" ");
   client.print(dht_status);
   client.print(" ");
   client.print(dht_humidity, 1);
   client.print(" ");
-  client.print(dht_temp, 1);
-  client.print(" ");
-  client.print(in_temp, 2);
-  client.print(" ");
-  client.println(out_temp, 2);
+  client.println(dht_temp, 1);
 }
 
 void clientPrintJSON(EthernetClient &client)
@@ -287,8 +263,6 @@ void clientPrintJSON(EthernetClient &client)
   client.print(light_level, 2);
   client.print(",\n\"bmp_temperature\": ");
   client.print(bmp_temperature, 2);
-  client.print(",\n\"altitude\": ");
-  client.print(altitude, 2);
   client.print(",\n\"pressure\": ");
   client.print(pressure, DEC);
   client.print(",\n\"dht_status\": ");
@@ -297,10 +271,6 @@ void clientPrintJSON(EthernetClient &client)
   client.print(dht_humidity, 2);
   client.print(",\n\"dht_temp\": ");
   client.print(dht_temp, 2);
-  client.print(",\n\"in_temp\": ");
-  client.print(in_temp, 2);
-  client.print(",\n\"out_temp\": ");
-  client.print(out_temp, 2);
   client.println("\n}");
 }
 
@@ -314,21 +284,15 @@ void clientPrintAllData(EthernetClient &client)
   client.print("BMP Temp: ");
   client.print(bmp_temperature, 2);
   client.println(" deg C<br/>");
-  client.print("Indoor Temp: ");
-  client.print(in_temp, 2);
-  client.println(" deg C<br/>");
   client.print("Pressure: ");
   client.print(pressure, DEC);
   client.println(" Pa<br/>");
-  client.print("Altitude: ");
-  client.print(altitude, 2);
-  client.println(" m<br/>");
   
   switch (dht_status) {
   case DHTLIB_OK:
       client.print("Humidity: ");
       client.print(dht_humidity, 1);
-      client.println(" %<br/>");
+      client.println(" %%<br/>");
 
       client.print("DHT Temp: ");
       client.print(dht_temp, 1);
@@ -351,9 +315,6 @@ void clientPrintAllData(EthernetClient &client)
   client.print("Light: ");
   client.print(light_level, 2);
   client.println("<br/>");
-  client.print("Outdoor Temp: ");
-  client.print(out_temp, 2);
-  client.println(" deg C<br/>");
 }
 
 void printHeader(EthernetClient &client)
