@@ -29,6 +29,7 @@ IPAddress ip(192,168,62,177);
 // (port 80 is default for HTTP):
 EthernetServer server(80);
 String message;
+String error_message;
 #define MODE_NORMAL 0
 #define MODE_JSON 1
 #define MODE_RAW 2
@@ -79,7 +80,7 @@ float in_temp;
 float out_temp;
 int dht_status;
 
-unsigned long curr_time; // milliseconds sine hardware start
+unsigned long curr_time; // milliseconds since hardware start
 ///////////////////////////////////////////////////////////////
 void setup()
 {
@@ -92,6 +93,10 @@ void setup()
   // Reserve & initialize space for string
   message.reserve(BUFFER);
   message = "";
+
+  error_message.reserve(BUFFER);
+  error_message = "";
+
     
   // Initialize LED off
   pinMode(LED_PIN, OUTPUT);
@@ -114,10 +119,9 @@ void setup()
 }
 
 ///////////////////////////////////////////////////////////////
+int index = 0;
 void loop()
 {
-  int index = 0;
-
   // printAllData();
   // serialPrintRaw();
 
@@ -125,6 +129,8 @@ void loop()
   EthernetClient client = server.available();
   if (client) {
     Serial.println("new client");
+    message = "";
+    index = 0;
     // an http request ends with a blank line
     boolean currentLineIsBlank = true;
 
@@ -183,9 +189,12 @@ void loop()
           break; // Break out of while loop
         }
         else if (message.indexOf("GET / ") >= 0) { chosen_mode = MODE_NORMAL; } // Return HTML formatted data
-        else if (message.indexOf("GET /json") >= 0) { chosen_mode = MODE_JSON; } // Return JSON data format
-        else if (message.indexOf("GET /raw") >= 0) { chosen_mode = MODE_RAW; } // Return just the raw values
-        else { chosen_mode = MODE_ERROR;}
+        else if (message.indexOf("GET /json") >= 0 || message.indexOf("GET //json") >= 0) { chosen_mode = MODE_JSON; } // Return JSON data format
+        else if (message.indexOf("GET /raw") >= 0 || message.indexOf("GET //raw") >= 0) { chosen_mode = MODE_RAW; } // Return just the raw values
+        else { 
+          chosen_mode = MODE_ERROR;
+          error_message = message;
+        }
 
         // Start next line
         message = "";
@@ -240,7 +249,8 @@ void readSensors()
 
 void clientPrintError(EthernetClient &client)
 {
-  client.print("Unexpected request.");
+  client.println("Unexpected request. ");
+  client.println("Received: " + error_message);
 }
 // Print BMP_temp pressure altitude light_level DHT_humidty DHT_temperature in_temp out_temp
 void clientPrintRaw(EthernetClient &client)
